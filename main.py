@@ -36,7 +36,7 @@ RENDER_URL = os.getenv(
 )
 
 bot = telebot.TeleBot(TOKEN) if TOKEN else None
-app = FastAPI(title="DataPulse TON Super Micro-SaaS")
+app = FastAPI(title="DataPulse TON Monitized SaaS")
 
 
 @app.on_event("startup")
@@ -96,6 +96,9 @@ if bot:
         telebot.types.InlineKeyboardButton(
             "⭐ Upgrade to PRO", callback_data="upgrade_pro"
         ),
+        telebot.types.InlineKeyboardButton(
+            "🛠️ Support & Help", callback_data="support"
+        ),  # زر الدعم الجديد
     )
     welcome_text = (
         "⚡️ *Welcome to DataPulse TON* \n\n"
@@ -210,8 +213,19 @@ if bot:
           call.message.chat.id,
           "⭐ *كيفية الترقية إلى باقة DataPulse PRO:*\n\n1️⃣ قم بتحويل `1"
           " TON` فقط إلى محفظة منصتنا الرسمية:\n`EQA_MOCK_TON_WALLET_ADDRESS_FOR_PAYMENTS`\n\n2️⃣"
-          " بعد اتمام التحويل، أرسل رقم المعاملة مع معرفك للمدير ليتم تفعيل"
-          " حسابك فوراً!",
+          " بعد اتمام التحويل، اضغط على زر **🛠️ Support & Help** وأرسل إيصال"
+          " التحويل أو رقم المعاملة مع معرفك للمدير ليتم تفعيل حسابك فوراً!",
+          parse_mode="Markdown",
+      )
+
+    elif call.data == "support":
+      bot.answer_callback_query(call.id)
+      bot.send_message(
+          call.message.chat.id,
+          "🛠️ *DataPulse Support Desk*\n\nهل تواجه مشكلة، أو تريد تفعيل"
+          " اشتراكك بعد التحويل؟\n\nتواصل مباشرة مع مدير النظام والدعم"
+          " الفني:\n👉 **Telegram:** `@AHMADISRAJ`\n\nنحن هنا لمساعدتك على مدار"
+          " الساعة! 🚀",
           parse_mode="Markdown",
       )
 
@@ -270,5 +284,5 @@ def read_root():
   return {
       "status": "online",
       "project": "DataPulse TON Monitized SaaS",
-      "version": "4.0.1",
+      "version": "4.1.0",
   }
