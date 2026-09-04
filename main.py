@@ -20,14 +20,18 @@ class User(Base):
   id = Column(Integer, primary_key=True, index=True)
   telegram_id = Column(Integer, unique=True, index=True)
   username = Column(String, nullable=True)
+  wallet_address = Column(String, nullable=True)
   joined_at = Column(DateTime, default=datetime.utcnow)
 
 
 Base.metadata.create_all(bind=engine)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# ضع معرف تيليجرام الخاص بك هنا أو في المتغيرات البيئية ليكون لك صلاحية الإذاعة
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+
 bot = telebot.TeleBot(TOKEN) if TOKEN else None
-app = FastAPI(title="DataPulse TON API & Micro-SaaS")
+app = FastAPI(title="DataPulse TON Super Micro-SaaS")
 
 
 @app.on_event("startup")
@@ -74,6 +78,9 @@ if bot:
             "👤 My Account", callback_data="my_account"
         ),
         telebot.types.InlineKeyboardButton(
+            "🔗 Connect Wallet", callback_data="connect_wallet"
+        ),
+        telebot.types.InlineKeyboardButton(
             "ℹ️ About Project", callback_data="get_about"
         ),
     )
@@ -88,6 +95,47 @@ if bot:
         parse_mode="Markdown",
         reply_markup=markup,
     )
+
+  # ميزة الإذاعة الجماعية (خاصة بالمدير فقط)
+  @bot.message_handler(commands=["broadcast"])
+  def broadcast_message(message):
+    if message.from_user.id != ADMIN_ID and ADMIN_ID != 0:
+      bot.reply_to(message, "⚠️ عذراً، هذا الأمر مخصص لمدير المنصة فقط.")
+      return
+
+    text_to_send = message.text.replace("/broadcast", "").strip()
+    if not text_to_send:
+      bot.reply_to(
+          message,
+          "⚠️ الرجاء كتابة الرسالة بعد الأمر هكذا:\n`/broadcast نص الإعلان"
+          " هنا`",
+          parse_mode="Markdown",
+      )
+      return
+
+    db = SessionLocal()
+    try:
+      users = db.query(User).all()
+      success_count = 0
+      for u in users:
+        try:
+          bot.send_message(
+              u.telegram_id,
+              f"📢 *Broadcast Announcement*\n\n{text_to_send}",
+              parse_mode="Markdown",
+          )
+          success_count += 1
+        except Exception:
+          pass
+      bot.reply_to(
+          message,
+          f"✅ تمت إرسال الإذاعة بنجاح إلى `{success_count}` مستخدم في المنصة!",
+          parse_mode="Markdown",
+      )
+    except Exception as e:
+      bot.reply_to(message, f"❌ حدث خطأ: {e}")
+    finally:
+      db.close()
 
   @bot.callback_query_handler(func=lambda call: True)
   def handle_query(call):
@@ -104,14 +152,13 @@ if bot:
         bot.send_message(
             call.message.chat.id,
             f"💎 *TON Live Market Data:*\n\n• **Price:** `${price}` USD\n•"
-            f" **24h Change:** `{change}%` {emoji}\n• **Network:** The Open"
-            " Network (TON)",
+            f" **24h Change:** `{change}%` {emoji}",
             parse_mode="Markdown",
         )
       except Exception:
         bot.send_message(
             call.message.chat.id,
-            "💎 *TON Price:* `$5.80` USD (Live sync active)",
+            "💎 *TON Price:* `$5.80` USD",
             parse_mode="Markdown",
         )
 
@@ -120,9 +167,31 @@ if bot:
       bot.send_message(
           call.message.chat.id,
           "⛽ *TON Network Gas Fees:*\n\n• **Average Tx Cost:** `0.005 TON`"
-          " (~$0.03)\n• **Network Status:** `Optimal & Fast 🚀`",
+          " (~$0.03)\n• **Status:** `Optimal & Fast 🚀`",
           parse_mode="Markdown",
       )
+
+    elif call.data == "connect_wallet":
+      bot.answer_callback_query(call.id)
+      db = SessionLocal()
+      try:
+        user_id = call.from_user.id
+        user = db.query(User).filter(User.telegram_id == user_id).first()
+        if user:
+          # محاكاة ربط محفظة TON حقيقية للمستخدم
+          mock_wallet = f"EQC{user_id}abcdef...TON_Wallet"
+          user.wallet_address = mock_wallet
+          db.commit()
+          bot.send_message(
+              call.message.chat.id,
+              "🎉 *TON Wallet Connected Successfully!*\n\nYour address:\n`"
+              f"{mock_wallet}`\n\nYou can now view it inside 👤 *My Account*.",
+              parse_mode="Markdown",
+          )
+      except Exception as e:
+        print(e)
+      finally:
+        db.close()
 
     elif call.data == "my_account":
       bot.answer_callback_query(call.id)
@@ -132,12 +201,16 @@ if bot:
         user = db.query(User).filter(User.telegram_id == user_id).first()
         if user:
           joined = user.joined_at.strftime("%Y-%m-%d %H:%M")
+          wallet = (
+              user.wallet_address
+              if user.wallet_address
+              else "Not Connected ❌"
+          )
           bot.send_message(
               call.message.chat.id,
               f"👤 *Your Web3 Profile:*\n\n• **Telegram ID:**"
               f" `{user.telegram_id}`\n• **Username:** `@{user.username}`\n•"
-              f" **Joined At:** `{joined} UTC`\n• **Status:** `Active Member"
-              " 🌟`",
+              f" **Wallet:** `{wallet}`\n• **Joined At:** `{joined} UTC`",
               parse_mode="Markdown",
           )
         else:
@@ -154,15 +227,19 @@ if bot:
       bot.answer_callback_query(call.id)
       bot.send_message(
           call.message.chat.id,
-          "ℹ️ *DataPulse TON* is a high-performance Web3 Micro-SaaS built with"
-          " FastAPI, SQLite, and Telegram Bot API.",
+          "ℹ️ *DataPulse TON* Web3 Micro-SaaS platform with automated broadcast"
+          " & wallet connection features.",
           parse_mode="Markdown",
       )
 
 
 @app.get("/")
 def read_root():
-  return {"status": "online", "project": "DataPulse TON API", "version": "2.0.0"}
+  return {
+      "status": "online",
+      "project": "DataPulse TON Super API",
+      "version": "3.0.0",
+  }
 
 
 @app.get("/api/stats")
@@ -170,10 +247,14 @@ def get_stats():
   db = SessionLocal()
   try:
     total_users = db.query(User).count()
+    connected_wallets = (
+        db.query(User).filter(User.wallet_address != None).count()
+    )
     return {
         "status": "success",
         "total_registered_users": total_users,
-        "platform": "DataPulse TON Micro-SaaS",
+        "connected_wallets": connected_wallets,
+        "platform": "DataPulse TON Super Micro-SaaS",
         "timestamp": datetime.utcnow().isoformat(),
     }
   except Exception as e:
