@@ -3,10 +3,30 @@ import threading
 from fastapi import FastAPI
 import telebot
 import requests
+from sqlalchemy import create_engine, Column, Integer, String, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from datetime import datetime
+
+# إعداد قاعدة البيانات
+DATABASE_URL = "sqlite:///users.db"
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+
+class User(Base):
+  __tablename__ = "users"
+  id = Column(Integer, primary_key=True, index=True)
+  telegram_id = Column(Integer, unique=True, index=True)
+  username = Column(String, nullable=True)
+  joined_at = Column(DateTime, default=datetime.utcnow)
+
+
+Base.metadata.create_all(bind=engine)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN) if TOKEN else None
-
 app = FastAPI(title="DataPulse TON API")
 
 
@@ -16,46 +36,50 @@ def startup_event():
 
     def run_bot():
       try:
-        print("Telegram bot polling started successfully...")
-        # إزالة أي اتصال سابق أو ويبهوك لمنع تعارض 409
         bot.remove_webhook()
-        # بدء الـ Polling مع تخطي التحديثات المعلقة
         bot.infinity_polling(none_stop=True, skip_pending=True)
       except Exception as e:
         print(f"Bot polling error: {e}")
 
-    thread = threading.Thread(target=run_bot, daemon=True)
-    thread.start()
-  else:
-    print(
-        "WARNING: TELEGRAM_BOT_TOKEN is missing or invalid! Bot will not run."
-    )
+    threading.Thread(target=run_bot, daemon=True).start()
 
 
 if bot:
 
   @bot.message_handler(commands=["start"])
   def send_welcome(message):
-    markup = telebot.types.InlineKeyboardMarkup(row_width=2)
-    btn_price = telebot.types.InlineKeyboardButton(
-        "📊 TON Price", callback_data="get_price"
-    )
-    btn_gas = telebot.types.InlineKeyboardButton(
-        "⛽ Network Gas", callback_data="get_gas"
-    )
-    btn_about = telebot.types.InlineKeyboardButton(
-        "ℹ️ About Project", callback_data="get_about"
-    )
-    markup.add(btn_price, btn_gas, btn_about)
+    # حفظ المستخدم في قاعدة البيانات
+    db = SessionLocal()
+    try:
+      user_id = message.from_user.id
+      username = message.from_user.username or "No Username"
+      existing_user = db.query(User).filter(User.telegram_id == user_id).first()
+      if not existing_user:
+        new_user = User(telegram_id=user_id, username=username)
+        db.add(new_user)
+        db.commit()
+    except Exception as e:
+      print(f"DB Error: {e}")
+    finally:
+      db.close()
 
-    welcome_text = (
-        "⚡️ *Welcome to DataPulse TON* \n\n"
-        "Your advanced gateway to TON network data and Web3 analytics. 🚀\n\n"
-        "👇 *Choose an option below to explore:*"
+    markup = telebot.types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        telebot.types.InlineKeyboardButton(
+            "📊 TON Price", callback_data="get_price"
+        ),
+        telebot.types.InlineKeyboardButton(
+            "⛽ Network Gas", callback_data="get_gas"
+        ),
+        telebot.types.InlineKeyboardButton(
+            "ℹ️ About Project", callback_data="get_about"
+        ),
     )
     bot.send_message(
         message.chat.id,
-        welcome_text,
+        "⚡️ *Welcome to DataPulse TON* \n\nYour advanced gateway to TON network"
+        " data and Web3 analytics. 🚀\n\n👇 *Choose an option below to"
+        " explore:*",
         parse_mode="Markdown",
         reply_markup=markup,
     )
@@ -71,7 +95,7 @@ if bot:
         price = res.json()["the-open-network"]["usd"]
         bot.send_message(
             call.message.chat.id,
-            f"💎 *Current TON Price:* `${price}` USD\n📈 Market is active and tracking live.",
+            f"💎 *Current TON Price:* `${price}` USD",
             parse_mode="Markdown",
         )
       except Exception:
@@ -80,28 +104,22 @@ if bot:
             "💎 *TON Price:* $5.80 (Estimated)",
             parse_mode="Markdown",
         )
-
     elif call.data == "get_gas":
       bot.answer_callback_query(call.id)
       bot.send_message(
           call.message.chat.id,
-          "⛽ *TON Network Gas Fees:*\nAverage transaction cost: `0.005 TON`"
-          " (Very Low & Fast 🚀)",
+          "⛽ *TON Network Gas Fees:* `0.005 TON`",
           parse_mode="Markdown",
       )
-
     elif call.data == "get_about":
       bot.answer_callback_query(call.id)
       bot.send_message(
           call.message.chat.id,
-          "ℹ️ *DataPulse TON* is a smart Micro-SaaS built on FastAPI & Render"
-          " to provide instant Web3 data analytics.",
+          "ℹ️ *DataPulse TON* Micro-SaaS analytics platform.",
           parse_mode="Markdown",
       )
 
 
 @app.get("/")
 def read_root():
-  return {
-      "message": "Welcome to DataPulse TON Backend API is running successfully!"
-  }
+  return {"message": "DataPulse TON API with Database is running!"}
