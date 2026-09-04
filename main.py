@@ -26,6 +26,9 @@ class User(Base):
   is_premium = Column(Boolean, default=False)
   referred_by = Column(Integer, nullable=True)
   referral_count = Column(Integer, default=0)
+  is_waiting_for_wallet = Column(
+      Boolean, default=False
+  )  # حالة انتظار المحفظة في قاعدة البيانات
   joined_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -39,9 +42,6 @@ RENDER_URL = os.getenv(
 
 bot = telebot.TeleBot(TOKEN) if TOKEN else None
 app = FastAPI(title="DataPulse TON Monitized SaaS")
-
-# ذاكرة مؤقتة لمتابعة المستخدمين الذين يقومون بربط محفظتهم
-WAITING_FOR_WALLET = set()
 
 
 @app.on_event("startup")
@@ -177,18 +177,30 @@ if bot:
     except Exception as e:
       bot.reply_to(message, f"❌ حدث خطأ: {e}")
 
-  # معالج استقبال رسالة عنوان المحفظة الحقيقي من المستخدم
+
+  # دالة لفحص حالة الانتظار من قاعدة البيانات مباشرة
+  def check_user_waiting_wallet(user_id):
+    db = SessionLocal()
+    try:
+      user = db.query(User).filter(User.telegram_id == user_id).first()
+      return user and user.is_waiting_for_wallet
+    except Exception:
+      return False
+    finally:
+      db.close()
+
+
+  # معالج استقبال رسالة عنوان المحفظة الحقيقي المستند إلى قاعدة البيانات
   @bot.message_handler(
-      func=lambda message: message.from_user.id in WAITING_FOR_WALLET
+      func=lambda message: check_user_waiting_wallet(message.from_user.id)
   )
   def save_wallet_address(message):
     if message.text and message.text.startswith("/"):
-      return  # تجاهل الأوامر لتجنب التداخل
+      return
 
     user_id = message.from_user.id
     wallet_addr = message.text.strip()
 
-    # التحقق المبدئي البسيط من طول العنوان
     if len(wallet_addr) < 30 or " " in wallet_addr:
       bot.reply_to(
           message,
@@ -202,8 +214,10 @@ if bot:
       user = db.query(User).filter(User.telegram_id == user_id).first()
       if user:
         user.wallet_address = wallet_addr
+        user.is_waiting_for_wallet = (
+            False  # إيقاف حالة الانتظار بعد الحفظ الناجح
+        )
         db.commit()
-        WAITING_FOR_WALLET.remove(user_id)
         bot.reply_to(
             message,
             f"🎉 *تم ربط محفظتك الحقيقية بنجاح!*\n\n• **العنوان المسجل:**"
@@ -326,14 +340,23 @@ if bot:
     elif call.data == "connect_wallet":
       bot.answer_callback_query(call.id)
       user_id = call.from_user.id
-      WAITING_FOR_WALLET.add(user_id)
-      bot.send_message(
-          call.message.chat.id,
-          "🔗 *ربط المحفظة الحقيقية (TON Wallet)*\n\nيرجى إرسال عنوان محفظتك"
-          " الحقيقية على شبكة TON (يبدأ بـ `EQ` أو `UQ`) في رسالة نصية هنا الآن"
-          " لربطها بحسابك:",
-          parse_mode="Markdown",
-      )
+      db = SessionLocal()
+      try:
+        user = db.query(User).filter(User.telegram_id == user_id).first()
+        if user:
+          user.is_waiting_for_wallet = True  # تفعيل حالة الانتظار في قاعدة البيانات
+          db.commit()
+          bot.send_message(
+              call.message.chat.id,
+              "🔗 *ربط المحفظة الحقيقية (TON Wallet)*\n\nيرجى إرسال عنوان محفظتك"
+              " الحقيقية على شبكة TON (يبدأ بـ `EQ` أو `UQ`) في رسالة نصية هنا الآن"
+              " لربطها بحسابك:",
+              parse_mode="Markdown",
+          )
+      except Exception as e:
+        print(e)
+      finally:
+        db.close()
 
     elif call.data == "my_account":
       bot.answer_callback_query(call.id)
@@ -371,6 +394,5 @@ def read_root():
   return {
       "status": "online",
       "project": "DataPulse TON Monitized SaaS",
-      "version": "4.3.0",
+      "version": "4.4.0",
   }
-
