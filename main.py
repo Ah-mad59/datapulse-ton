@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from fastapi import FastAPI, Request
 import requests
-from sqlalchemy import Column, DateTime, Integer, String, create_engine
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import telebot
@@ -23,6 +23,7 @@ class User(Base):
   telegram_id = Column(Integer, unique=True, index=True)
   username = Column(String, nullable=True)
   wallet_address = Column(String, nullable=True)
+  is_premium = Column(Boolean, default=False)  # حقل جديد لتحديد المشتركين المميزين
   joined_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -54,7 +55,6 @@ if bot:
 
   @app.post(f"/{TOKEN}")
   async def receive_update(request: Request):
-    print("🔔 Received webhook update from Telegram!")
     json_data = await request.json()
     update = telebot.types.Update.de_json(json_data)
     bot.process_new_updates([update])
@@ -85,14 +85,17 @@ if bot:
             "⛽ Network Gas", callback_data="get_gas"
         ),
         telebot.types.InlineKeyboardButton(
+            "💎 Pro Market Insights", callback_data="pro_insights"
+        ),  # ميزة مدفوعة جديدة
+        telebot.types.InlineKeyboardButton(
             "👤 My Account", callback_data="my_account"
         ),
         telebot.types.InlineKeyboardButton(
             "🔗 Connect Wallet", callback_data="connect_wallet"
         ),
         telebot.types.InlineKeyboardButton(
-            "ℹ️ About Project", callback_data="get_about"
-        ),
+            "⭐ Upgrade to PRO", callback_data="upgrade_pro"
+        ),  # زر الترقية
     )
     welcome_text = (
         "⚡️ *Welcome to DataPulse TON* \n\n"
@@ -106,45 +109,39 @@ if bot:
         reply_markup=markup,
     )
 
-  @bot.message_handler(commands=["broadcast"])
-  def broadcast_message(message):
+  # أمر خاص بالمدير لترقية أي مستخدم للباقة المميزة: /pro telegram_id
+  @bot.message_handler(commands=["pro"])
+  def make_user_pro(message):
     if message.from_user.id != ADMIN_ID and ADMIN_ID != 0:
-      bot.reply_to(message, "⚠️ عذراً، هذا الأمر مخصص لمدير المنصة فقط.")
+      bot.reply_to(message, "⚠️ هذا الأمر مخصص لمدير النظام فقط.")
       return
-
-    text_to_send = message.text.replace("/broadcast", "").strip()
-    if not text_to_send:
-      bot.reply_to(
-          message,
-          "⚠️ الرجاء كتابة الرسالة بعد الأمر هكذا:\n`/broadcast نص الإعلان"
-          " هنا`",
-          parse_mode="Markdown",
-      )
+    parts = message.text.split()
+    if len(parts) < 2:
+      bot.reply_to(message, "⚠️ الاستخدام الصحيح: `/pro [Telegram_ID]`")
       return
-
-    db = SessionLocal()
     try:
-      users = db.query(User).all()
-      success_count = 0
-      for u in users:
-        try:
-          bot.send_message(
-              u.telegram_id,
-              f"📢 *Broadcast Announcement*\n\n{text_to_send}",
-              parse_mode="Markdown",
-          )
-          success_count += 1
-        except Exception:
-          pass
-      bot.reply_to(
-          message,
-          f"✅ تمت إرسال الإذاعة بنجاح إلى `{success_count}` مستخدم في المنصة!",
-          parse_mode="Markdown",
-      )
+      target_id = int(parts[1])
+      db = SessionLocal()
+      user = db.query(User).filter(User.telegram_id == target_id).first()
+      if user:
+        user.is_premium = True
+        db.commit()
+        bot.reply_to(
+            message,
+            f"✅ تم تفعيل باقة PRO بنجاح للمستخدم `{target_id}`!",
+            parse_mode="Markdown",
+        )
+        bot.send_message(
+            target_id,
+            "🎉 *تهانينا!* تم ترقية حسابك إلى باقة **DataPulse PRO** بنجاح. استمتع"
+            " بالتحليلات الحصرية الآن! 🚀",
+            parse_mode="Markdown",
+        )
+      else:
+        bot.reply_to(message, "❌ لم يتم العثور على المستخدم في قاعدة البيانات.")
+      db.close()
     except Exception as e:
       bot.reply_to(message, f"❌ حدث خطأ: {e}")
-    finally:
-      db.close()
 
   @bot.callback_query_handler(func=lambda call: True)
   def handle_query(call):
@@ -167,7 +164,7 @@ if bot:
       except Exception:
         bot.send_message(
             call.message.chat.id,
-            "💎 *TON Price:* `$5.80` USD",
+            "💎 *TON Price:* `$1.36` USD",
             parse_mode="Markdown",
         )
 
@@ -177,6 +174,46 @@ if bot:
           call.message.chat.id,
           "⛽ *TON Network Gas Fees:*\n\n• **Average Tx Cost:** `0.005 TON`"
           " (~$0.03)\n• **Status:** `Optimal & Fast 🚀`",
+          parse_mode="Markdown",
+      )
+
+    elif call.data == "pro_insights":
+      bot.answer_callback_query(call.id)
+      db = SessionLocal()
+      try:
+        user_id = call.from_user.id
+        user = db.query(User).filter(User.telegram_id == user_id).first()
+        if user and user.is_premium:
+          bot.send_message(
+              call.message.chat.id,
+              "🔥 *PRO Whale Tracking & Deep Insights:*\n\n• **Large Transactions"
+              " (24h):** `42 Whale Transfers`\n• **Inflow Volume:** `+1.5M"
+              " TON`\n• **Market Sentiment:** `Strong Bullish 🚀`\n\n*(هذه"
+              " التحليلات تظهر للمشتركين المميزين فقط)*",
+              parse_mode="Markdown",
+          )
+        else:
+          bot.send_message(
+              call.message.chat.id,
+              "🔒 *ميزة حصرية للأعضاء المميزين (PRO)*\n\nهذه التحليلات المتقدمة"
+              " ورصد حركة الحيتان مخصصة فقط لمشتركي باقة Pro.\n\nللاشتراك"
+              " والحصول على الصلاحية، قم بالنقر على زر **⭐ Upgrade to PRO**"
+              " أدناه.",
+              parse_mode="Markdown",
+          )
+      except Exception as e:
+        print(e)
+      finally:
+        db.close()
+
+    elif call.data == "upgrade_pro":
+      bot.answer_callback_query(call.id)
+      bot.send_message(
+          call.message.chat.id,
+          "⭐ *كيفية الترقية إلى باقة DataPulse PRO:*\n\n1️⃣ قم بتحويل `1"
+          " TON` فقط إلى محفظة منصتنا الرسمية:\n`EQA_MOCK_TON_WALLET_ADDRESS_FOR_PAYMENTS`\n\n2️⃣"
+          " بعد اتمام التحويل، أرسل صورة الحوالة أو رقم المعاملة مع معرفك"
+          " للمدير [@YourUsername] ليتم تفعيل حسابك فوراً وتلقي الأرباح!",
           parse_mode="Markdown",
       )
 
@@ -193,7 +230,7 @@ if bot:
           bot.send_message(
               call.message.chat.id,
               "🎉 *TON Wallet Connected Successfully!*\n\nYour address:\n`"
-              f"{mock_wallet}`\n\nYou can now view it inside 👤 *My Account*.",
+              f"{mock_wallet}`",
               parse_mode="Markdown",
           )
       except Exception as e:
@@ -214,58 +251,24 @@ if bot:
               if user.wallet_address
               else "Not Connected ❌"
           )
+          status_pro = "⭐ PRO Member" else "👤 Standard Free"
           bot.send_message(
               call.message.chat.id,
               f"👤 *Your Web3 Profile:*\n\n• **Telegram ID:**"
-              f" `{user.telegram_id}`\n• **Username:** `@{user.username}`\n•"
+              f" `{user.telegram_id}`\n• **Account Type:** `{status_pro}`\n•"
               f" **Wallet:** `{wallet}`\n• **Joined At:** `{joined} UTC`",
               parse_mode="Markdown",
-          )
-        else:
-          bot.send_message(
-              call.message.chat.id,
-              "Please type /start to initialize your account.",
           )
       except Exception as e:
         print(e)
       finally:
         db.close()
 
-    elif call.data == "get_about":
-      bot.answer_callback_query(call.id)
-      bot.send_message(
-          call.message.chat.id,
-          "ℹ️ *DataPulse TON* Web3 Micro-SaaS platform with automated broadcast"
-          " & wallet connection features.",
-          parse_mode="Markdown",
-      )
-
 
 @app.get("/")
 def read_root():
   return {
       "status": "online",
-      "project": "DataPulse TON Super API",
-      "version": "3.3.0-webhook",
+      "project": "DataPulse TON Monitized SaaS",
+      "version": "4.0.0",
   }
-
-
-@app.get("/api/stats")
-def get_stats():
-  db = SessionLocal()
-  try:
-    total_users = db.query(User).count()
-    connected_wallets = (
-        db.query(User).filter(User.wallet_address != None).count()
-    )
-    return {
-        "status": "success",
-        "total_registered_users": total_users,
-        "connected_wallets": connected_wallets,
-        "platform": "DataPulse TON Super Micro-SaaS",
-        "timestamp": datetime.utcnow().isoformat(),
-    }
-  except Exception as e:
-    return {"status": "error", "message": str(e)}
-  finally:
-    db.close()
