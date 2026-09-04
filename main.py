@@ -17,10 +17,9 @@ if bot:
     @bot.message_handler(commands=['start'])
     def send_welcome(message):
         welcome_text = (
-            "👋 **Welcome to DataPulse TON | أهلاً بك!**\n\n"
-            "Your advanced gateway to TON network data and Web3 analytics. 🚀\n"
-            "بوابتك المتطورة لبيانات وتحليلات شبكة TON وعالم الـ Web3.\n\n"
-            "Choose what you'd like to explore below / اختر ما تود استكشافه لبدء رحلتك."
+            "👋 *Welcome to DataPulse TON!*\n\n"
+            "Your advanced gateway to TON network data and Web3 analytics. 🚀\n\n"
+            "Choose what you'd like to explore below."
         )
         bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
