@@ -30,7 +30,6 @@ Base.metadata.create_all(bind=engine)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-# رابط سحابة Render الخاص بك
 RENDER_URL = os.getenv(
     "RENDER_EXTERNAL_URL", "https://datapulse-ton.onrender.com"
 )
@@ -42,18 +41,20 @@ app = FastAPI(title="DataPulse TON Super Micro-SaaS")
 @app.on_event("startup")
 def startup_event():
   if bot and TOKEN:
-    # ربط الـ Webhook تلقائياً عند إقلاع السيرفر
     webhook_url = f"{RENDER_URL}/{TOKEN}"
-    bot.remove_webhook()
-    bot.set_webhook(url=webhook_url)
-    print(f"Webhook successfully set to: {webhook_url}")
+    try:
+      bot.remove_webhook()
+      res = bot.set_webhook(url=webhook_url)
+      print(f"✅ Webhook setup result: {res} -> {webhook_url}")
+    except Exception as e:
+      print(f"❌ Webhook error: {e}")
 
 
-# نقطة استقبال الرسائل من تيليجرام مباشرة عبر Webhook
 if bot:
 
   @app.post(f"/{TOKEN}")
   async def receive_update(request: Request):
+    print("🔔 Received webhook update from Telegram!")
     json_data = await request.json()
     update = telebot.types.Update.de_json(json_data)
     bot.process_new_updates([update])
@@ -245,7 +246,7 @@ def read_root():
   return {
       "status": "online",
       "project": "DataPulse TON Super API",
-      "version": "3.2.0-webhook",
+      "version": "3.3.0-webhook",
   }
 
 
