@@ -98,7 +98,7 @@ if bot:
         ),
         telebot.types.InlineKeyboardButton(
             "🛠️ Support & Help", callback_data="support"
-        ),  # زر الدعم الجديد
+        ),
     )
     welcome_text = (
         "⚡️ *Welcome to DataPulse TON* \n\n"
@@ -212,7 +212,7 @@ if bot:
       bot.send_message(
           call.message.chat.id,
           "⭐ *كيفية الترقية إلى باقة DataPulse PRO:*\n\n1️⃣ قم بتحويل `1"
-          " TON` فقط إلى محفظة منصتنا الرسمية:UQDBbQY_R5cnZlpRv5x-f_CNFU8v0whgBLsjpGwwsjZxpPCH
+          " TON` فقط إلى محفظة منصتنا الرسمية:\n`UQDBbQY_R5cnZlpRv5x-f_CNFU8v0whgBLsjpGwwsjZxpPCH`\n\n2️⃣"
           " بعد اتمام التحويل، اضغط على زر **🛠️ Support & Help** وأرسل إيصال"
           " التحويل أو رقم المعاملة مع معرفك للمدير ليتم تفعيل حسابك فوراً!",
           parse_mode="Markdown",
@@ -284,5 +284,5 @@ def read_root():
   return {
       "status": "online",
       "project": "DataPulse TON Monitized SaaS",
-      "version": "4.1.0",
+      "version": "4.1.1",
   }
