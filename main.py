@@ -24,6 +24,10 @@ class User(Base):
   username = Column(String, nullable=True)
   wallet_address = Column(String, nullable=True)
   is_premium = Column(Boolean, default=False)
+  referred_by = Column(Integer, nullable=True)  # من قام بدعوته
+  referral_count = Column(
+      Integer, default=0
+  )  # عدد الأشخاص الذين دعاهم المستخدم
   joined_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -66,9 +70,36 @@ if bot:
     try:
       user_id = message.from_user.id
       username = message.from_user.username or "No Username"
+
+      # فحص ما إذا دخل المستخدم عبر رابط إحالة (مثال: /start 7831034534)
+      args = message.text.split()
+      referrer_id = None
+      if len(args) > 1:
+        try:
+          referrer_id = int(args[1])
+        except ValueError:
+          pass
+
       existing_user = db.query(User).filter(User.telegram_id == user_id).first()
       if not existing_user:
-        new_user = User(telegram_id=user_id, username=username)
+        # إذا كان هناك مُحيل صحيح ولم يدعُ المستخدم نفسه
+        if (
+            referrer_id
+            and referrer_id != user_id
+            and db.query(User).filter(User.telegram_id == referrer_id).first()
+        ):
+          new_user = User(
+              telegram_id=user_id, username=username, referred_by=referrer_id
+          )
+          # زيادة عدد الإحالات للمُحيل
+          referrer = (
+              db.query(User).filter(User.telegram_id == referrer_id).first()
+          )
+          if referrer:
+            referrer.referral_count += 1
+        else:
+          new_user = User(telegram_id=user_id, username=username)
+
         db.add(new_user)
         db.commit()
     except Exception as e:
@@ -96,6 +127,9 @@ if bot:
         telebot.types.InlineKeyboardButton(
             "⭐ Upgrade to PRO", callback_data="upgrade_pro"
         ),
+        telebot.types.InlineKeyboardButton(
+            "🎁 Invite & Earn", callback_data="referral"
+        ),  # زر برنامج الإحالة الجديد
         telebot.types.InlineKeyboardButton(
             "🛠️ Support & Help", callback_data="support"
         ),
@@ -218,6 +252,30 @@ if bot:
           parse_mode="Markdown",
       )
 
+    elif call.data == "referral":
+      bot.answer_callback_query(call.id)
+      db = SessionLocal()
+      try:
+        user_id = call.from_user.id
+        user = db.query(User).filter(User.telegram_id == user_id).first()
+        if user:
+          bot_info = bot.get_me()
+          bot_username = bot_info.username
+          ref_link = f"https://t.me/{bot_username}?start={user.telegram_id}"
+          bot.send_message(
+              call.message.chat.id,
+              "🎁 *برنامج الإحالة والأرباح (Referral Program)*\n\nادعُ أصدقائك"
+              " إلى بوت DataPulse TON وابدأ بناء مجتمعك!\n\n🔗 *رابط الدعوة"
+              f" الخاص بك:*\n`{ref_link}`\n\n👥 **عدد الأشخاص الذين دعيتهم:**"
+              f" `{user.referral_count}` مستخدم\n\n_شارك الرابط في المجموعات"
+              " والقنوات واكسب ثقة مستخدميك الجدد! 🚀_",
+              parse_mode="Markdown",
+          )
+      except Exception as e:
+        print(e)
+      finally:
+        db.close()
+
     elif call.data == "support":
       bot.answer_callback_query(call.id)
       bot.send_message(
@@ -270,7 +328,9 @@ if bot:
               call.message.chat.id,
               f"👤 *Your Web3 Profile:*\n\n• **Telegram ID:**"
               f" `{user.telegram_id}`\n• **Account Type:** `{status_pro}`\n•"
-              f" **Wallet:** `{wallet}`\n• **Joined At:** `{joined} UTC`",
+              f" **Wallet:** `{wallet}`\n• **Invited Users:**"
+              f" `{user.referral_count} Friends`\n• **Joined At:** `{joined}"
+              " UTC`",
               parse_mode="Markdown",
           )
       except Exception as e:
@@ -284,5 +344,6 @@ def read_root():
   return {
       "status": "online",
       "project": "DataPulse TON Monitized SaaS",
-      "version": "4.1.1",
+      "version": "4.2.0",
   }
+
