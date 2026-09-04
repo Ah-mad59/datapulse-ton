@@ -17,7 +17,10 @@ def startup_event():
     def run_bot():
       try:
         print("Telegram bot polling started successfully...")
-        bot.infinity_polling(none_stop=True)
+        # إزالة أي اتصال سابق أو ويبهوك لمنع تعارض 409
+        bot.remove_webhook()
+        # بدء الـ Polling مع تخطي التحديثات المعلقة
+        bot.infinity_polling(none_stop=True, skip_pending=True)
       except Exception as e:
         print(f"Bot polling error: {e}")
 
@@ -61,7 +64,6 @@ if bot:
   def handle_query(call):
     if call.data == "get_price":
       bot.answer_callback_query(call.id)
-      # جلب سعر TON الحقيقي من API عام
       try:
         res = requests.get(
             "https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd"
