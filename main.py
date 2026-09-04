@@ -23,7 +23,7 @@ class User(Base):
   telegram_id = Column(Integer, unique=True, index=True)
   username = Column(String, nullable=True)
   wallet_address = Column(String, nullable=True)
-  is_premium = Column(Boolean, default=False)  # حقل جديد لتحديد المشتركين المميزين
+  is_premium = Column(Boolean, default=False)
   joined_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -86,7 +86,7 @@ if bot:
         ),
         telebot.types.InlineKeyboardButton(
             "💎 Pro Market Insights", callback_data="pro_insights"
-        ),  # ميزة مدفوعة جديدة
+        ),
         telebot.types.InlineKeyboardButton(
             "👤 My Account", callback_data="my_account"
         ),
@@ -95,7 +95,7 @@ if bot:
         ),
         telebot.types.InlineKeyboardButton(
             "⭐ Upgrade to PRO", callback_data="upgrade_pro"
-        ),  # زر الترقية
+        ),
     )
     welcome_text = (
         "⚡️ *Welcome to DataPulse TON* \n\n"
@@ -109,7 +109,6 @@ if bot:
         reply_markup=markup,
     )
 
-  # أمر خاص بالمدير لترقية أي مستخدم للباقة المميزة: /pro telegram_id
   @bot.message_handler(commands=["pro"])
   def make_user_pro(message):
     if message.from_user.id != ADMIN_ID and ADMIN_ID != 0:
@@ -188,8 +187,7 @@ if bot:
               call.message.chat.id,
               "🔥 *PRO Whale Tracking & Deep Insights:*\n\n• **Large Transactions"
               " (24h):** `42 Whale Transfers`\n• **Inflow Volume:** `+1.5M"
-              " TON`\n• **Market Sentiment:** `Strong Bullish 🚀`\n\n*(هذه"
-              " التحليلات تظهر للمشتركين المميزين فقط)*",
+              " TON`\n• **Market Sentiment:** `Strong Bullish 🚀`",
               parse_mode="Markdown",
           )
         else:
@@ -212,8 +210,8 @@ if bot:
           call.message.chat.id,
           "⭐ *كيفية الترقية إلى باقة DataPulse PRO:*\n\n1️⃣ قم بتحويل `1"
           " TON` فقط إلى محفظة منصتنا الرسمية:\n`EQA_MOCK_TON_WALLET_ADDRESS_FOR_PAYMENTS`\n\n2️⃣"
-          " بعد اتمام التحويل، أرسل صورة الحوالة أو رقم المعاملة مع معرفك"
-          " للمدير [@YourUsername] ليتم تفعيل حسابك فوراً وتلقي الأرباح!",
+          " بعد اتمام التحويل، أرسل رقم المعاملة مع معرفك للمدير ليتم تفعيل"
+          " حسابك فوراً!",
           parse_mode="Markdown",
       )
 
@@ -251,7 +249,9 @@ if bot:
               if user.wallet_address
               else "Not Connected ❌"
           )
-          status_pro = "⭐ PRO Member" else "👤 Standard Free"
+          status_pro = (
+              "⭐ PRO Member" if user.is_premium else "👤 Standard Free"
+          )
           bot.send_message(
               call.message.chat.id,
               f"👤 *Your Web3 Profile:*\n\n• **Telegram ID:**"
@@ -270,5 +270,5 @@ def read_root():
   return {
       "status": "online",
       "project": "DataPulse TON Monitized SaaS",
-      "version": "4.0.0",
+      "version": "4.0.1",
   }
