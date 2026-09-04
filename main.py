@@ -1,16 +1,18 @@
+import json
 import os
-import threading
-from fastapi import FastAPI
-import telebot
+from datetime import datetime
+from fastapi import FastAPI, Request
 import requests
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
+from sqlalchemy import Column, DateTime, Integer, String, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from datetime import datetime
+import telebot
 
 # إعداد قاعدة البيانات
 DATABASE_URL = "sqlite:///users.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(
+    DATABASE_URL, connect_args={"check_same_thread": False}
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -27,8 +29,11 @@ class User(Base):
 Base.metadata.create_all(bind=engine)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-# ضع معرف تيليجرام الخاص بك هنا أو في المتغيرات البيئية ليكون لك صلاحية الإذاعة
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+# رابط سحابة Render الخاص بك
+RENDER_URL = os.getenv(
+    "RENDER_EXTERNAL_URL", "https://datapulse-ton.onrender.com"
+)
 
 bot = telebot.TeleBot(TOKEN) if TOKEN else None
 app = FastAPI(title="DataPulse TON Super Micro-SaaS")
@@ -36,19 +41,23 @@ app = FastAPI(title="DataPulse TON Super Micro-SaaS")
 
 @app.on_event("startup")
 def startup_event():
-  if bot:
-
-    def run_bot():
-      try:
-        bot.remove_webhook()
-        bot.infinity_polling(none_stop=True, skip_pending=True)
-      except Exception as e:
-        print(f"Bot polling error: {e}")
-
-    threading.Thread(target=run_bot, daemon=True).start()
+  if bot and TOKEN:
+    # ربط الـ Webhook تلقائياً عند إقلاع السيرفر
+    webhook_url = f"{RENDER_URL}/{TOKEN}"
+    bot.remove_webhook()
+    bot.set_webhook(url=webhook_url)
+    print(f"Webhook successfully set to: {webhook_url}")
 
 
+# نقطة استقبال الرسائل من تيليجرام مباشرة عبر Webhook
 if bot:
+
+  @app.post(f"/{TOKEN}")
+  async def receive_update(request: Request):
+    json_data = await request.json()
+    update = telebot.types.Update.de_json(json_data)
+    bot.process_new_updates([update])
+    return {"status": "ok"}
 
   @bot.message_handler(commands=["start"])
   def send_welcome(message):
@@ -96,7 +105,6 @@ if bot:
         reply_markup=markup,
     )
 
-  # ميزة الإذاعة الجماعية (خاصة بالمدير فقط)
   @bot.message_handler(commands=["broadcast"])
   def broadcast_message(message):
     if message.from_user.id != ADMIN_ID and ADMIN_ID != 0:
@@ -178,7 +186,6 @@ if bot:
         user_id = call.from_user.id
         user = db.query(User).filter(User.telegram_id == user_id).first()
         if user:
-          # محاكاة ربط محفظة TON حقيقية للمستخدم
           mock_wallet = f"EQC{user_id}abcdef...TON_Wallet"
           user.wallet_address = mock_wallet
           db.commit()
@@ -238,7 +245,7 @@ def read_root():
   return {
       "status": "online",
       "project": "DataPulse TON Super API",
-      "version": "3.0.0",
+      "version": "3.2.0-webhook",
   }
 
 
