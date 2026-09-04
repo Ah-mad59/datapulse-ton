@@ -24,10 +24,8 @@ class User(Base):
   username = Column(String, nullable=True)
   wallet_address = Column(String, nullable=True)
   is_premium = Column(Boolean, default=False)
-  referred_by = Column(Integer, nullable=True)  # من قام بدعوته
-  referral_count = Column(
-      Integer, default=0
-  )  # عدد الأشخاص الذين دعاهم المستخدم
+  referred_by = Column(Integer, nullable=True)
+  referral_count = Column(Integer, default=0)
   joined_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -41,6 +39,9 @@ RENDER_URL = os.getenv(
 
 bot = telebot.TeleBot(TOKEN) if TOKEN else None
 app = FastAPI(title="DataPulse TON Monitized SaaS")
+
+# ذاكرة مؤقتة لمتابعة المستخدمين الذين يقومون بربط محفظتهم
+WAITING_FOR_WALLET = set()
 
 
 @app.on_event("startup")
@@ -71,7 +72,6 @@ if bot:
       user_id = message.from_user.id
       username = message.from_user.username or "No Username"
 
-      # فحص ما إذا دخل المستخدم عبر رابط إحالة (مثال: /start 7831034534)
       args = message.text.split()
       referrer_id = None
       if len(args) > 1:
@@ -82,7 +82,6 @@ if bot:
 
       existing_user = db.query(User).filter(User.telegram_id == user_id).first()
       if not existing_user:
-        # إذا كان هناك مُحيل صحيح ولم يدعُ المستخدم نفسه
         if (
             referrer_id
             and referrer_id != user_id
@@ -91,7 +90,6 @@ if bot:
           new_user = User(
               telegram_id=user_id, username=username, referred_by=referrer_id
           )
-          # زيادة عدد الإحالات للمُحيل
           referrer = (
               db.query(User).filter(User.telegram_id == referrer_id).first()
           )
@@ -129,7 +127,7 @@ if bot:
         ),
         telebot.types.InlineKeyboardButton(
             "🎁 Invite & Earn", callback_data="referral"
-        ),  # زر برنامج الإحالة الجديد
+        ),
         telebot.types.InlineKeyboardButton(
             "🛠️ Support & Help", callback_data="support"
         ),
@@ -178,6 +176,44 @@ if bot:
       db.close()
     except Exception as e:
       bot.reply_to(message, f"❌ حدث خطأ: {e}")
+
+  # معالج استقبال رسالة عنوان المحفظة الحقيقي من المستخدم
+  @bot.message_handler(
+      func=lambda message: message.from_user.id in WAITING_FOR_WALLET
+  )
+  def save_wallet_address(message):
+    if message.text and message.text.startswith("/"):
+      return  # تجاهل الأوامر لتجنب التداخل
+
+    user_id = message.from_user.id
+    wallet_addr = message.text.strip()
+
+    # التحقق المبدئي البسيط من طول العنوان
+    if len(wallet_addr) < 30 or " " in wallet_addr:
+      bot.reply_to(
+          message,
+          "⚠️ عنوان محفظة غير صالح. يرجى التأكد من إرسال عنوان محفظة TON صحيح"
+          " (يبدأ عادةً بـ EQ أو UQ).",
+      )
+      return
+
+    db = SessionLocal()
+    try:
+      user = db.query(User).filter(User.telegram_id == user_id).first()
+      if user:
+        user.wallet_address = wallet_addr
+        db.commit()
+        WAITING_FOR_WALLET.remove(user_id)
+        bot.reply_to(
+            message,
+            f"🎉 *تم ربط محفظتك الحقيقية بنجاح!*\n\n• **العنوان المسجل:**"
+            f" `{wallet_addr}`",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+      print(f"Wallet save error: {e}")
+    finally:
+      db.close()
 
   @bot.callback_query_handler(func=lambda call: True)
   def handle_query(call):
@@ -289,24 +325,15 @@ if bot:
 
     elif call.data == "connect_wallet":
       bot.answer_callback_query(call.id)
-      db = SessionLocal()
-      try:
-        user_id = call.from_user.id
-        user = db.query(User).filter(User.telegram_id == user_id).first()
-        if user:
-          mock_wallet = f"EQC{user_id}abcdef...TON_Wallet"
-          user.wallet_address = mock_wallet
-          db.commit()
-          bot.send_message(
-              call.message.chat.id,
-              "🎉 *TON Wallet Connected Successfully!*\n\nYour address:\n`"
-              f"{mock_wallet}`",
-              parse_mode="Markdown",
-          )
-      except Exception as e:
-        print(e)
-      finally:
-        db.close()
+      user_id = call.from_user.id
+      WAITING_FOR_WALLET.add(user_id)
+      bot.send_message(
+          call.message.chat.id,
+          "🔗 *ربط المحفظة الحقيقية (TON Wallet)*\n\nيرجى إرسال عنوان محفظتك"
+          " الحقيقية على شبكة TON (يبدأ بـ `EQ` أو `UQ`) في رسالة نصية هنا الآن"
+          " لربطها بحسابك:",
+          parse_mode="Markdown",
+      )
 
     elif call.data == "my_account":
       bot.answer_callback_query(call.id)
@@ -344,6 +371,6 @@ def read_root():
   return {
       "status": "online",
       "project": "DataPulse TON Monitized SaaS",
-      "version": "4.2.0",
+      "version": "4.3.0",
   }
 
